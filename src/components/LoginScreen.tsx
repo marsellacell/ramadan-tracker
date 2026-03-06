@@ -48,7 +48,7 @@ export default function LoginScreen() {
                         letterSpacing: -0.5,
                     }}
                 >
-                    Ramadan Tracker
+                    Ramadan Tracker by marsell
                 </h1>
                 <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 15, marginTop: 8 }}>
                     Catat dan jaga istiqomah ibadahmu

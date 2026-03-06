@@ -1,5 +1,5 @@
 "use client";
-import { usePrayerTimes } from "@/hooks/usePrayerTimes";
+import { usePrayerTimes, type PrayerTimes } from "@/hooks/usePrayerTimes";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { MapPin, Clock, Star } from "lucide-react";
@@ -75,7 +75,7 @@ export default function PrayerCard() {
             {/* Prayer Times List */}
             <div className="p-4 space-y-2">
                 {PRAYER_DISPLAY.map(({ key, label, icon }) => {
-                    const timeStr = times?.[key as keyof typeof times];
+                    const timeStr = times?.[key as keyof PrayerTimes];
                     const passed = timeStr ? isPassed(timeStr) : false;
                     const next = isNext(label);
 
