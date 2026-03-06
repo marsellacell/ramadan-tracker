@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { format } from "date-fns";
 
 export interface PrayerTimes {
@@ -17,7 +17,6 @@ export interface PrayerData {
     city: string;
     loading: boolean;
     error: string | null;
-    nextPrayer: { name: string; time: string; countdown: string } | null;
 }
 
 const PRAYER_NAMES: Record<string, string> = {
@@ -48,7 +47,6 @@ export function usePrayerTimes() {
         city: "Jakarta",
         loading: true,
         error: null,
-        nextPrayer: null,
     });
 
     const [now, setNow] = useState(new Date());
@@ -58,15 +56,15 @@ export function usePrayerTimes() {
         return () => clearInterval(timer);
     }, []);
 
-    const fetchPrayerTimes = useCallback(async (lat: number, lon: number, cityName: string) => {
+    const loadTimes = useCallback(async (lat: number, lon: number, cityName: string) => {
         const today = format(new Date(), "dd-MM-yyyy");
         const cacheKey = `prayer_${today}_${lat.toFixed(2)}_${lon.toFixed(2)}`;
         const cached = localStorage.getItem(cacheKey);
 
         if (cached) {
             const parsed = JSON.parse(cached);
-            setData(prev => ({ ...prev, times: parsed.times, city: cityName, loading: false }));
-            return parsed.times;
+            setData({ times: parsed.times, city: cityName, loading: false, error: null });
+            return;
         }
 
         try {
@@ -76,44 +74,51 @@ export function usePrayerTimes() {
             const json = await res.json();
             const timings = json.data.timings as PrayerTimes;
             localStorage.setItem(cacheKey, JSON.stringify({ times: timings, city: cityName }));
-            setData(prev => ({ ...prev, times: timings, city: cityName, loading: false }));
-            return timings;
+            setData({ times: timings, city: cityName, loading: false, error: null });
         } catch {
             setData(prev => ({ ...prev, error: "Gagal mengambil jadwal shalat", loading: false }));
         }
     }, []);
 
     useEffect(() => {
-        // Try to get user location
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                async (pos) => {
-                    const { latitude, longitude } = pos.coords;
-                    // Reverse geocode using a simple API
-                    try {
-                        const geoRes = await fetch(
-                            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-                        );
-                        const geoJson = await geoRes.json();
-                        const city = geoJson.address.city || geoJson.address.town || geoJson.address.county || "Lokasimu";
-                        fetchPrayerTimes(latitude, longitude, city);
-                    } catch {
-                        fetchPrayerTimes(latitude, longitude, "Lokasimu");
-                    }
-                },
-                () => {
-                    // Default: Jakarta
-                    fetchPrayerTimes(-6.2088, 106.8456, "Jakarta");
-                }
-            );
-        } else {
-            fetchPrayerTimes(-6.2088, 106.8456, "Jakarta");
-        }
-    }, [fetchPrayerTimes]);
+        let isMounted = true;
 
-    // Calculate next prayer
-    useEffect(() => {
-        if (!data.times) return;
+        const initialize = async () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (pos) => {
+                        if (!isMounted) return;
+                        const { latitude, longitude } = pos.coords;
+                        try {
+                            const geoRes = await fetch(
+                                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+                            );
+                            const geoJson = await geoRes.json();
+                            const city = geoJson.address.city || geoJson.address.town || geoJson.address.county || "Lokasimu";
+                            if (isMounted) loadTimes(latitude, longitude, city);
+                        } catch {
+                            if (isMounted) loadTimes(latitude, longitude, "Lokasimu");
+                        }
+                    },
+                    () => {
+                        if (isMounted) loadTimes(-6.2088, 106.8456, "Jakarta");
+                    }
+                );
+            } else {
+                loadTimes(-6.2088, 106.8456, "Jakarta");
+            }
+        };
+
+        initialize();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [loadTimes]);
+
+    // Calculate next prayer using useMemo instead of useEffect (Deriving state)
+    const nextPrayer = useMemo(() => {
+        if (!data.times) return null;
 
         const prayerOrder = ["Imsak", "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -135,7 +140,6 @@ export function usePrayerTimes() {
             }
         }
 
-        // If all prayers passed, next is Imsak tomorrow
         if (!next) {
             next = {
                 name: "Imsak",
@@ -144,8 +148,8 @@ export function usePrayerTimes() {
             };
         }
 
-        setData(prev => ({ ...prev, nextPrayer: next }));
+        return next;
     }, [now, data.times]);
 
-    return { ...data, now };
+    return { ...data, nextPrayer, now };
 }
